@@ -3,27 +3,26 @@ extern crate swash;
 extern crate zeno;
 
 mod text_renderer;
-use text_renderer::{FontManager, FontData};
+use text_renderer::{GlyphRenderer, FontData};
 
 
 fn main() {
-  let mut font_manager = FontManager::default();
-  let go_mono = FontData::from_file("/usr/share/fonts/TTF/Go-Mono.ttf", 0).unwrap();
+  let mut font_manager = GlyphRenderer::default();
+  let go_mono = FontData::from_file("/usr/share/fonts/TTF/FiraCode-Regular.ttf", 0).unwrap();
+  
 
   let textcolor: [u8; 4] = [30, 30, 30, 255];
   let destcolor: [u8; 4] = [230, 230, 230, 255];
   let fm = &mut font_manager;
 
-  let mut img = fm.render_glyph(go_mono.as_ref(), 32, go_mono.charmap().map('q'), textcolor, destcolor);
-  /*
-  let font = Font::from_file("/usr/share/fonts/TTF/Go-Mono.ttf", 0).unwrap();
-  let mut scaleContext = scale::ScaleContext::new();
-  let mut scaler = scaleContext.builder(font.as_ref())
-    .size(18.)
-    .hint(false)
+  let size = 14.0;
+  let mut shape_ctx = swash::shape::ShapeContext::new();
+  let mut shaper = shape_ctx.builder(go_mono.as_ref())
+    .script(swash::text::Script::Latin)
+    .size(size)
     .build();
 
-  draw_text(&mut scaler, font.charmap().map('r'));*/
+
   
   let sdl = sdl2::init().unwrap();
 
@@ -40,35 +39,27 @@ fn main() {
   let mut canvas = window.into_canvas().build().unwrap();
   let texture_creator = canvas.texture_creator();
 
-  let surface = sdl2::surface::Surface::from_data(&mut img.data, img.width, img.height, img.width*4, sdl2::pixels::PixelFormatEnum::ARGB8888).unwrap();
-  let texture = texture_creator
-    .create_texture_from_surface(&surface)
-    .unwrap();
-  //let tr = text_renderer::TextRenderer::new(&texture_creator);
-
   canvas.set_draw_color(sdl2::pixels::Color::RGBA(230, 230, 230, 255));
   canvas.clear();
 
-
-  //let texture = draw_text(&texture_creator, &mut scaler, font.charmap().map('r'));
-  let sdl2::render::TextureQuery {width, height, ..} = texture.query();
-  canvas.copy(&texture, None, sdl2::rect::Rect::new(5, 5, width, height)).unwrap();
-  /*
-  
-  let texture = draw_text(&texture_creator, &mut scaler, font.charmap().map('g'));
-  let sdl2::render::TextureQuery {width, height, ..} = texture.query();
-  canvas.copy(&texture, None, sdl2::rect::Rect::new(5+10, 5, width, height)).unwrap();
-
-  let texture = draw_text(&texture_creator, &mut scaler, font.charmap().map('b'));
-  let sdl2::render::TextureQuery {width, height, ..} = texture.query();
-  canvas.copy(&texture, None, sdl2::rect::Rect::new(5+10*2, 5, width, height)).unwrap();
-  */
-
+  shaper.add_str("hello world =>");
+  let mut x = 5.0;
+  shaper.shape_with(|gc: &swash::shape::cluster::GlyphCluster<'_>| {
+    for glyph in gc.glyphs {
+      let mut img = fm.render_glyph(go_mono.as_ref(), size as u32, glyph.id, textcolor, destcolor);
+      if img.height == 0 || img.width == 0 {x += glyph.advance; continue}
+      let surface = sdl2::surface::Surface::from_data(&mut img.data, img.width, img.height, img.width*4, sdl2::pixels::PixelFormatEnum::ABGR8888).unwrap();
+      let texture = texture_creator
+        .create_texture_from_surface(&surface)
+        .unwrap();
+    
+      let sdl2::render::TextureQuery {width, height, ..} = texture.query();
+      canvas.copy(&texture, None, sdl2::rect::Rect::new(x.round() as i32 + img.left as i32, 20-img.top as i32, width, height)).unwrap();
+      x += glyph.advance;
+    }
+  });
   
   canvas.present(); 
-
-
-  
   
   let mut buffer: Vec<u8> = Vec::new();
 
