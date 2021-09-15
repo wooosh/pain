@@ -167,8 +167,7 @@ impl GlyphRenderer {
     
       */
       
-      (
-        (textcolor as u16 * maskcolor as u16) + 
+      ((textcolor as u16 * maskcolor as u16) + 
         (destcolor as u16 * 
           ((0xff00 - (textalpha as u16 * maskcolor as u16)) >> 8))
          >> 8) as u8
@@ -185,18 +184,19 @@ impl GlyphRenderer {
       let vdest_color = _mm_set1_epi32(i32::from_ne_bytes(destcolor));
       let vdest_color = _mm_unpacklo_epi8(vdest_color, vzero);
 
-      let vtext_alpha = _mm_set1_epi8(textcolor[3] as i8);
+      let vtext_alpha = _mm_set1_epi16(textcolor[3] as i16);
 
       // fixed point representation of one
       // 0xff00 == -256
-      let fixpt_one = _mm_set1_epi16(-256);
+      let fixpt_one = _mm_set1_epi16(-256i16);
 
       // TODO: look at what this generates
       for px in img.data.chunks_mut(16) {
         // TODO: remove this branch and add it to the end
        if px.len() < 16 {
+            // todo: handle not exactly 4
             for p in px.chunks_mut(4) {
-
+              //println!("{}", p.len());
               p[3] = composite_color(textcolor[3], textcolor[3], p[3], destcolor[3]);
 
               p[0] = composite_color(textcolor[0], textcolor[3], p[0], destcolor[0]);
@@ -228,6 +228,7 @@ impl GlyphRenderer {
           let left = _mm_mullo_epi16(vsubpx_mask, vtext_color);
 
           let results = _mm_mullo_epi16(vtext_alpha, vsubpx_mask);
+          // TODO: why do we need saturating subtraction here? also the arguments are reversed???
           let results = _mm_subs_epu16(results, fixpt_one);
           let results = _mm_srli_epi16(results, 8);
           let results = _mm_mullo_epi16(results, vdest_color);

@@ -5,8 +5,12 @@ extern crate zeno;
 mod text_renderer;
 use text_renderer::{GlyphRenderer, FontData};
 
+mod piece_table;
+
 
 fn main() {
+
+  if true {return};
   let mut font_manager = GlyphRenderer::default();
   let go_mono = FontData::from_file("/usr/share/fonts/TTF/FiraCode-Regular.ttf", 0).unwrap();
   
@@ -21,8 +25,6 @@ fn main() {
     .script(swash::text::Script::Latin)
     .size(size)
     .build();
-
-
   
   let sdl = sdl2::init().unwrap();
 
@@ -42,7 +44,7 @@ fn main() {
   canvas.set_draw_color(sdl2::pixels::Color::RGBA(230, 230, 230, 255));
   canvas.clear();
 
-  shaper.add_str("hello world =>");
+  shaper.add_str("hello world =>;");
   let mut x = 5.0;
   shaper.shape_with(|gc: &swash::shape::cluster::GlyphCluster<'_>| {
     for glyph in gc.glyphs {
