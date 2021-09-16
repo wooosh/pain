@@ -6,6 +6,7 @@ TODO: make resistant from false bounds from plugins
 
 #[derive(Copy, Clone)]
 pub struct Span {
+    // TODO: phantomdata?
     start: usize,
     end: usize
     // Potentially cache the number of lines present
@@ -29,23 +30,16 @@ pub struct EditBuffer {
 // how do i mutate the buffer in an append only way
 
 // Piece Table
-pub struct SpanTable<'a> {
-    buffer: &'a Vec<u8>,
+// owns no data, only manages ranges
+#[derive(Default)]
+pub struct SpanTable {
     spans: Vec<Span>,
     // TODO: rename to operations
     commands: Vec<Operation>,
     // TODO: last edited span for contigous edits
 }
 
-impl<'a> SpanTable<'a> {
-    pub fn new(buffer: &'a Vec<u8>) -> Self {
-        SpanTable {
-            buffer,
-            spans: Vec::new(),
-            commands: Vec::new(),
-        }
-    }
-
+impl SpanTable {
     pub fn command_idx(&self) -> usize {
         self.commands.len()
     }
@@ -80,128 +74,121 @@ impl<'a> SpanTable<'a> {
         self.commands.push(Operation::SplitSpan {span: original_span, index, byte_offset});
     }
 
-    pub fn contents(&self) -> Vec<u8> {
+    #[cfg(test)]
+    pub fn contents(&self, buffer: &Vec<u8>) -> Vec<u8> {
         let mut contents: Vec<u8> = Vec::new();
         for span in &self.spans {
-            contents.extend(&self.buffer[span.start .. span.end]);
+            contents.extend(&buffer[span.start .. span.end]);
         }
         contents
     }
     
-    pub fn spans(&self) -> Vec<&[u8]> {
+    #[cfg(test)]
+    pub fn spans<'a>(&self, buffer: &'a Vec<u8>) -> Vec<&'a [u8]> {
         let mut spans: Vec<&[u8]> = Vec::new();
         for span in &self.spans {
-            spans.push(&self.buffer[span.start .. span.end]);
+            spans.push(&buffer[span.start .. span.end]);
         }
         spans
     }
 }
 
-/* merge_span 
-    combine two spans into one span object
-    if the two spans are adjacent in the buffer, this just returns a new span
-    otherwise it copies the two together and adds it to the end of the buffer
-    - maybe consider not supporting adding to the end of the buffer
-
-    removespan twice, then insertspan
-
-    split_span
-        removespan once, then insertspan twice
-*/
-
 mod test {
     use super::*;
 
-    fn new_str(vec: &mut Vec<u8>, add: &str) -> Span {
-        let span = Span {
-            start: vec.len(),
-            end: vec.len() + add.len()
-        };
-        vec.extend(add.as_bytes());
-        span
+    #[derive(Default)]
+    struct SpanTableBuffer {
+        buffer: Vec<u8>,
+        pub st: SpanTable
     }
 
-    fn assert_span_table_equals(span_table: &SpanTable<'_>, expected: &str) {
-        assert_eq!(expected, std::str::from_utf8(&span_table.contents()).unwrap());
+    impl SpanTableBuffer {
+        fn span(&mut self, add: &str) -> Span {
+            let span = Span {
+                start: self.buffer.len(),
+                end: self.buffer.len() + add.len()
+            };
+            self.buffer.extend(add.as_bytes());
+            span
+        }
+    
+        fn assert_span_table_equals(&self, expected: &str) {
+            assert_eq!(expected, std::str::from_utf8(&self.st.contents(&self.buffer)).unwrap());
+        }
+    
+        fn assert_spans_equal(&self, expected: &[&str]) {
+            let spans = self.st.spans(&self.buffer);
+            let spans: Vec<&str> = spans.into_iter().map(|x| std::str::from_utf8(x).unwrap()).collect();
+            assert_eq!(spans, expected);
+        }
     }
-
-    fn assert_spans_equal(span_table: &SpanTable<'_>, expected: &[&str]) {
-        let spans = span_table.spans();
-        let spans: Vec<&str> = spans.into_iter().map(|x| std::str::from_utf8(x).unwrap()).collect();
-        assert_eq!(spans, expected);
-    }
-
+    
     #[test]
     fn test_insert() {
-        let mut v: Vec<u8> = Vec::new();
-        let hello = new_str(&mut v, "hello");
-        let world = new_str(&mut v, "world");
-        let onetwothree = new_str(&mut v, "123");
-        let abc = new_str(&mut v, "abc");
-        
+        let mut stb = SpanTableBuffer::default();
 
-        let mut st = SpanTable::new(&v);
+        let span = stb.span("hello");
+        stb.st.insert_span(span, 0);
+        stb.assert_span_table_equals("hello");
 
-        st.insert_span(hello, 0);
-        assert_span_table_equals(&st, "hello");
+        let span = stb.span("world");
+        stb.st.insert_span(span, 1);
+        stb.assert_span_table_equals("helloworld");
 
-        st.insert_span(world, 1);
-        assert_span_table_equals(&st, "helloworld");
+        let span = stb.span("abc");
+        stb.st.insert_span(span, 1);
+        stb.assert_span_table_equals("helloabcworld");
 
-        st.insert_span(abc, 1);
-        assert_span_table_equals(&st, "helloabcworld");
-
-        st.insert_span(onetwothree, 0);
-        assert_span_table_equals(&st, "123helloabcworld");
+        let span = stb.span("123");
+        stb.st.insert_span(span, 0);
+        stb.assert_span_table_equals("123helloabcworld");
     }
 
+    
     #[test]
     fn test_remove() {
-        let mut v: Vec<u8> = Vec::new();
-        let hello = new_str(&mut v, "hello");
-        let world = new_str(&mut v, "world");
-        let onetwothree = new_str(&mut v, "123");
-        let abc = new_str(&mut v, "abc");
-        
+        let mut stb = SpanTableBuffer::default();
 
-        let mut st = SpanTable::new(&v);
+        let span = stb.span("hello");
+        stb.st.insert_span(span, 0);
+        let span = stb.span("world");
+        stb.st.insert_span(span, 1);
+        let span = stb.span("abc");
+        stb.st.insert_span(span, 1);
+        let span = stb.span("123");
+        stb.st.insert_span(span, 0);
 
-        st.insert_span(hello, 0);
-        st.insert_span(world, 1);
-        st.insert_span(abc, 1);
-        st.insert_span(onetwothree, 0);
-        assert_span_table_equals(&st, "123helloabcworld");
+        stb.assert_span_table_equals("123helloabcworld");
 
-        st.remove_span(1);
-        assert_span_table_equals(&st, "123abcworld");
+        stb.st.remove_span(1);
+        stb.assert_span_table_equals("123abcworld");
 
-        st.remove_span(0);
-        assert_span_table_equals(&st, "abcworld");
+        stb.st.remove_span(0);
+        stb.assert_span_table_equals("abcworld");
 
-        st.remove_span(1);
-        assert_span_table_equals(&st, "abc");
+        stb.st.remove_span(1);
+        stb.assert_span_table_equals("abc");
 
-        st.remove_span(0);
-        assert_span_table_equals(&st, "");
+        stb.st.remove_span(0);
+        stb.assert_span_table_equals("");
     }
 
+    
     #[test]
     fn test_split() {
-        let mut v: Vec<u8> = Vec::new();
-        let contents = new_str(&mut v, "123helloabcworld");
-        let mut st = SpanTable::new(&v);
+        let mut stb = SpanTableBuffer::default();
 
-        st.insert_span(contents, 0);
-        assert_span_table_equals(&st, "123helloabcworld");
+        let span = stb.span("123helloabcworld");
+        stb.st.insert_span(span, 0);      
 
-        st.split_span(0, 3);
-        assert_spans_equal(&st, &["123", "helloabcworld"]);
+        stb.st.split_span(0, 3);
+        stb.assert_spans_equal(&["123", "helloabcworld"]);
 
-        st.split_span(1, 5);
-        assert_spans_equal(&st, &["123", "hello", "abcworld"]);
+        stb.st.split_span(1, 5);
+        stb.assert_spans_equal(&["123", "hello", "abcworld"]);
 
-        st.split_span(2, 3);
-        assert_spans_equal(&st, &["123", "hello", "abc", "world"]);
+        stb.st.split_span(2, 3);
+        stb.assert_spans_equal(&["123", "hello", "abc", "world"]);
     }
 
 }
