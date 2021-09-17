@@ -2,14 +2,21 @@
 
 /*
 TODO: make resistant from false bounds from plugins
+TODO: make iterator
 */
+
+// TODO: move into SpanTable (nested types?)
 
 #[derive(Copy, Clone)]
 pub struct Span {
     // TODO: phantomdata?
-    start: usize,
-    end: usize
+    pub start: usize,
+    pub end: usize
     // Potentially cache the number of lines present
+}
+
+impl Span {
+    pub fn len(&self) -> usize {self.end - self.start}
 }
 
 pub enum Operation {
@@ -20,28 +27,58 @@ pub enum Operation {
     //NewString: add to the append only buffer, this should probably be a command to the server instead of the piece chain
 }
 /*
+TODO: make this memory mapped and shared buffer between processes, maybe have a (start, end, memory_segment) span to handle resizing in a less dumb way
+would still have good locality because we would map enough space for the file + a generous buffer, so most things would stay on the same allocation, or at worst two allocations
+
 pub struct EditBuffer {
     Buffer
     SpanTable
     Generation
+    Vec<Mark>
 }
 */
-
-// how do i mutate the buffer in an append only way
 
 // Piece Table
 // owns no data, only manages ranges
 #[derive(Default)]
 pub struct SpanTable {
+    // TODO: handle zero length spans?
     spans: Vec<Span>,
     // TODO: rename to operations
     commands: Vec<Operation>,
     // TODO: last edited span for contigous edits
 }
 
+// TODO: store generation in debug mode so that is is only valid for one generation
+pub struct SpanPos {
+    pub span_index: usize,
+    pub byte_offset: usize
+}
+
 impl SpanTable {
     pub fn command_idx(&self) -> usize {
         self.commands.len()
+    }
+
+    pub fn span_len(&self) -> usize {
+        self.spans.len()
+    }
+
+    // TODO: write tests
+    pub fn byte_offset(&self, offset: usize) -> SpanPos {
+        if offset == 0 {
+            return SpanPos {span_index: 0, byte_offset: 0}
+        }
+
+        let mut travelled = 0;
+        for (span_index, span) in self.spans.iter().enumerate() {
+            if travelled + span.len() >= offset {
+                return SpanPos {span_index, byte_offset: offset - travelled}
+            }
+            travelled = travelled + span.len()
+        }
+        // TODO: handle offset outside of span_table
+        panic!();
     }
 
     pub fn insert_span(&mut self, span: Span, index: usize) {
@@ -74,7 +111,6 @@ impl SpanTable {
         self.commands.push(Operation::SplitSpan {span: original_span, index, byte_offset});
     }
 
-    #[cfg(test)]
     pub fn contents(&self, buffer: &Vec<u8>) -> Vec<u8> {
         let mut contents: Vec<u8> = Vec::new();
         for span in &self.spans {
@@ -82,8 +118,7 @@ impl SpanTable {
         }
         contents
     }
-    
-    #[cfg(test)]
+
     pub fn spans<'a>(&self, buffer: &'a Vec<u8>) -> Vec<&'a [u8]> {
         let mut spans: Vec<&[u8]> = Vec::new();
         for span in &self.spans {
@@ -93,6 +128,7 @@ impl SpanTable {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
 

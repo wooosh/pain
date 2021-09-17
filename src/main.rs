@@ -5,12 +5,13 @@ extern crate zeno;
 mod text_renderer;
 use text_renderer::{GlyphRenderer, FontData};
 
-mod piece_table;
+mod span_table;
+use span_table::{SpanTable};
+
+mod mark;
 
 
 fn main() {
-
-  if true {return};
   let mut font_manager = GlyphRenderer::default();
   let go_mono = FontData::from_file("/usr/share/fonts/TTF/FiraCode-Regular.ttf", 0).unwrap();
   
@@ -40,7 +41,7 @@ fn main() {
 
   let mut canvas = window.into_canvas().build().unwrap();
   let texture_creator = canvas.texture_creator();
-
+  /*
   canvas.set_draw_color(sdl2::pixels::Color::RGBA(230, 230, 230, 255));
   canvas.clear();
 
@@ -59,11 +60,23 @@ fn main() {
       canvas.copy(&texture, None, sdl2::rect::Rect::new(x.round() as i32 + img.left as i32, 20-img.top as i32, width, height)).unwrap();
       x += glyph.advance;
     }
-  });
+  });*/
   
   canvas.present(); 
   
+  // TODO: implement mark/cursor library with better editing primitives
   let mut buffer: Vec<u8> = Vec::new();
+
+  fn span(buffer: &mut Vec<u8>, add: &str) -> span_table::Span {
+    let span = span_table::Span {
+        start: buffer.len(),
+        end: buffer.len() + add.len()
+    };
+    buffer.extend(add.as_bytes());
+    span
+}
+  
+  let mut span_table = SpanTable::default();
 
   let mut event_pump = sdl.event_pump().unwrap();
   'main: loop {
@@ -73,9 +86,11 @@ fn main() {
           println!("keydown");
         },
         sdl2::event::Event::TextInput { text, .. } => {
-          buffer.extend(text.as_bytes());
+          let new = span(&mut buffer, &text);
+          span_table.insert_span(new, span_table.span_len());
           println!("textinput: {}", text);
-          println!("buffer: {:?}", buffer);
+          println!("buffer: {:?}", String::from_utf8_lossy(&buffer));
+          println!("spans: {:?}", span_table.spans(&buffer));
         },
         sdl2::event::Event::Quit {..} => break 'main,
         _ => {},
